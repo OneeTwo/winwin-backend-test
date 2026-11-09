@@ -1,5 +1,7 @@
 package com.winwin.auth_api.controller;
 
+import com.winwin.auth_api.dto.LoginRequest;
+import com.winwin.auth_api.dto.LoginResponse;
 import com.winwin.auth_api.dto.RegisterRequest;
 import com.winwin.auth_api.service.AuthService;
 import jakarta.validation.Valid;
@@ -24,5 +26,10 @@ public class AuthController {
     public ResponseEntity<Void> register(@Valid @RequestBody RegisterRequest request) {
         authService.register(request);
         return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
+        return ResponseEntity.ok(authService.login(request));
     }
 }

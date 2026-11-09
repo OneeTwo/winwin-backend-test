@@ -74,11 +74,11 @@ class JwtLiveServerAuthTest {
     }
 
     @Test
-    void missingProcessEndpoint_withValidToken_returnsNotFound() {
+    void missingEndpoint_withValidToken_returnsNotFound() {
         String token = jwtService.generateToken(UUID.randomUUID());
 
         ResponseEntity<String> response = client().get()
-                .uri("/api/process")
+                .uri("/api/nonexistent")
                 .header("Authorization", "Bearer " + token)
                 .retrieve()
                 .onStatus(status -> true, (req, res) -> { })

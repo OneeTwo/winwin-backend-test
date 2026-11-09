@@ -13,7 +13,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import java.sql.SQLException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.Optional;
@@ -47,12 +49,12 @@ class AuthServiceTest {
     @Test
     void register_savesNormalizedEmailAndHashedPassword() {
         when(userRepository.existsByEmail("test@example.com")).thenReturn(false);
-        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         authService.register(new RegisterRequest("  Test@Example.com ", "password123"));
 
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).save(userCaptor.capture());
+        verify(userRepository).saveAndFlush(userCaptor.capture());
 
         User saved = userCaptor.getValue();
         assertThat(saved.getEmail()).isEqualTo("test@example.com");
@@ -68,7 +70,40 @@ class AuthServiceTest {
                 .isInstanceOf(EmailAlreadyExistsException.class)
                 .hasMessage("Email already registered");
 
-        verify(userRepository, never()).save(any(User.class));
+        verify(userRepository, never()).saveAndFlush(any(User.class));
+    }
+
+    @Test
+    void register_translatesConcurrentDuplicateEmailAfterRollback() {
+        when(userRepository.existsByEmail("test@example.com")).thenReturn(false, true);
+        when(userRepository.saveAndFlush(any(User.class))).thenThrow(
+                new DataIntegrityViolationException("private SQL details", new SQLException("duplicate", "23505")));
+
+        assertThatThrownBy(() -> authService.register(new RegisterRequest("test@example.com", "password123")))
+                .isInstanceOf(EmailAlreadyExistsException.class)
+                .hasMessage("Email already registered");
+    }
+
+    @Test
+    void register_preservesUnrelatedConstraintFailures() {
+        when(userRepository.existsByEmail("test@example.com")).thenReturn(false);
+        DataIntegrityViolationException failure = new DataIntegrityViolationException(
+                "private SQL details", new SQLException("not null", "23502"));
+        when(userRepository.saveAndFlush(any(User.class))).thenThrow(failure);
+
+        assertThatThrownBy(() -> authService.register(new RegisterRequest("test@example.com", "password123")))
+                .isSameAs(failure);
+    }
+
+    @Test
+    void register_doesNotClassifyOtherUniqueConstraintsAsDuplicateEmail() {
+        when(userRepository.existsByEmail("test@example.com")).thenReturn(false);
+        DataIntegrityViolationException failure = new DataIntegrityViolationException(
+                "private SQL details", new SQLException("other unique constraint", "23505"));
+        when(userRepository.saveAndFlush(any(User.class))).thenThrow(failure);
+
+        assertThatThrownBy(() -> authService.register(new RegisterRequest("test@example.com", "password123")))
+                .isSameAs(failure);
     }
 
     @Test

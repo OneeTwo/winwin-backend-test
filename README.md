@@ -21,7 +21,7 @@ Compose provides service-name DNS on its default network.
 - Docker Engine with Docker Compose v2 or later.
 - For tests or running outside Docker: Java 21 and network access for the Maven
   Wrapper's first dependency download. A separate Maven installation is unnecessary.
-- Available host ports: 8080, 8081, and 5434 (PostgreSQL, bound to localhost).
+- Available host ports: 8080, 8081 (data-api, localhost only), and 5434 (PostgreSQL, localhost only).
 
 ## Environment configuration
 
@@ -142,9 +142,11 @@ processing-log persistence and ownership, and internal-token validation.
 
 - Use independent random secrets; never commit `.env`, JWTs, or passwords.
 - Tokens are sent only to the service that needs them. Internal tokens and
-  downstream error details are not returned to clients; Compose disables SQL logging.
-- Ports 8080 and 8081 are published for this task. Restrict data-api access to the
-  internal network in a production deployment, and terminate HTTPS at a trusted proxy.
+  downstream error details are not returned to clients; SQL logging is disabled by default.
+- Auth-api is published on port 8080. Data-api is bound to `127.0.0.1:8081` for
+  local testing; it should not be publicly exposed. Auth-api still reaches it over
+  the internal Docker network. In production, omit the data-api host port and
+  terminate HTTPS at a trusted proxy.
 - Environment variables suit this exercise; use a secret manager for production.
 - Hibernate's existing schema-update setting is retained. Use reviewed migrations,
   backups, and managed credential rotation for a production database.

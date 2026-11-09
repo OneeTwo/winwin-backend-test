@@ -1,8 +1,11 @@
 package com.winwin.auth_api.service;
 
+import com.winwin.auth_api.dto.LoginRequest;
+import com.winwin.auth_api.dto.LoginResponse;
 import com.winwin.auth_api.dto.RegisterRequest;
 import com.winwin.auth_api.entity.User;
 import com.winwin.auth_api.exception.EmailAlreadyExistsException;
+import com.winwin.auth_api.exception.InvalidCredentialsException;
 import com.winwin.auth_api.repository.UserRepository;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -13,12 +16,19 @@ import java.util.Locale;
 @Service
 public class AuthService {
 
+    private static final String INVALID_CREDENTIALS_MESSAGE = "Invalid email or password";
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
 
-    public AuthService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public AuthService(
+            UserRepository userRepository,
+            PasswordEncoder passwordEncoder,
+            JwtService jwtService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
     }
 
     @Transactional
@@ -34,6 +44,20 @@ public class AuthService {
         user.setPasswordHash(passwordEncoder.encode(request.password()));
 
         userRepository.save(user);
+    }
+
+    @Transactional(readOnly = true)
+    public LoginResponse login(LoginRequest request) {
+        String email = normalizeEmail(request.email());
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE));
+
+        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            throw new InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE);
+        }
+
+        return new LoginResponse(jwtService.generateToken(user.getId()));
     }
 
     private static String normalizeEmail(String email) {

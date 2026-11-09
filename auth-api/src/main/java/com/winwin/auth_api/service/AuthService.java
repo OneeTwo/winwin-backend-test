@@ -7,10 +7,12 @@ import com.winwin.auth_api.entity.User;
 import com.winwin.auth_api.exception.EmailAlreadyExistsException;
 import com.winwin.auth_api.exception.InvalidCredentialsException;
 import com.winwin.auth_api.repository.UserRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.sql.SQLException;
 import java.util.Locale;
 
 @Service
@@ -31,7 +33,6 @@ public class AuthService {
         this.jwtService = jwtService;
     }
 
-    @Transactional
     public void register(RegisterRequest request) {
         String email = normalizeEmail(request.email());
 
@@ -43,7 +44,15 @@ public class AuthService {
         user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode(request.password()));
 
-        userRepository.save(user);
+        try {
+            // The repository transaction must finish (or roll back) before checking a race.
+            userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException ex) {
+            if (isUniqueViolation(ex) && userRepository.existsByEmail(email)) {
+                throw new EmailAlreadyExistsException("Email already registered");
+            }
+            throw ex;
+        }
     }
 
     @Transactional(readOnly = true)
@@ -58,6 +67,15 @@ public class AuthService {
         }
 
         return new LoginResponse(jwtService.generateToken(user.getId()));
+    }
+
+    private static boolean isUniqueViolation(Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLException sqlException && "23505".equals(sqlException.getSQLState())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String normalizeEmail(String email) {
